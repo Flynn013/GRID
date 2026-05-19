@@ -3,7 +3,9 @@ package ai.grid.nav
 import ai.grid.agent.CLUAgent
 import ai.grid.ui.codex.CodexScreen
 import ai.grid.ui.editor.EditorScreen
+import ai.grid.ui.editor.EditorViewModel
 import ai.grid.ui.files.FilesScreen
+import ai.grid.ui.files.FilesViewModel
 import ai.grid.ui.projects.ProjectsScreen
 import ai.grid.ui.session.SessionScreen
 import ai.grid.ui.settings.SettingsScreen
@@ -52,21 +54,17 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
 }
 
 private val ALL_SCREENS = listOf(
-    Screen.Session,
-    Screen.Projects,
-    Screen.Stage,
-    Screen.Editor,
-    Screen.Files,
-    Screen.Codex,
-    Screen.Settings,
+    Screen.Session, Screen.Projects, Screen.Stage,
+    Screen.Editor,  Screen.Files,    Screen.Codex, Screen.Settings,
 )
 
 @Composable
 fun GRIDNavGraph(modifier: Modifier = Modifier) {
-    // Activity-scoped ViewModels — created here, before NavHost, so they survive
-    // tab switches and are shared across all destinations.
-    val cluAgent: CLUAgent           = viewModel()
+    // All ViewModels created before NavHost — activity-scoped, survive tab switches.
+    val cluAgent:   CLUAgent          = viewModel()
     val settingsVm: SettingsViewModel = viewModel()
+    val editorVm:   EditorViewModel   = viewModel()
+    val filesVm:    FilesViewModel    = viewModel()
 
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -82,7 +80,12 @@ fun GRIDNavGraph(modifier: Modifier = Modifier) {
                         currentDestination?.hierarchy?.any { it.route == screen.route } == true
                     NavigationBarItem(
                         icon  = { Icon(screen.icon, contentDescription = screen.label) },
-                        label = { Text(screen.label, style = androidx.compose.material3.MaterialTheme.typography.labelSmall) },
+                        label = {
+                            Text(
+                                screen.label,
+                                style = androidx.compose.material3.MaterialTheme.typography.labelSmall
+                            )
+                        },
                         selected = selected,
                         onClick  = {
                             navController.navigate(screen.route) {
@@ -118,8 +121,8 @@ fun GRIDNavGraph(modifier: Modifier = Modifier) {
                 ProjectsScreen(onNavigateToSession = { navController.navigate(Screen.Session.route) })
             }
             composable(Screen.Stage.route)    { StageScreen() }
-            composable(Screen.Editor.route)   { EditorScreen() }
-            composable(Screen.Files.route)    { FilesScreen() }
+            composable(Screen.Editor.route)   { EditorScreen(vm = editorVm) }
+            composable(Screen.Files.route)    { FilesScreen(vm = filesVm) }
             composable(Screen.Codex.route)    { CodexScreen() }
             composable(Screen.Settings.route) { SettingsScreen(vm = settingsVm) }
         }
