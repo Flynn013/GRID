@@ -1,0 +1,12 @@
+#!/bin/sh
+# Gradle wrapper script for GRID
+DIRNAME="$(dirname "$0")"
+exec "$DIRNAME/gradle/wrapper/gradle-wrapper.jar" "$@" 2>/dev/null || {
+  # Fallback: find gradle on PATH
+  JAVACMD="${JAVA_HOME:+"$JAVA_HOME/bin/java"}" 
+  JAVACMD="${JAVACMD:-java}"
+  APP_HOME="$(cd "$DIRNAME" && pwd)"
+  exec "$JAVACMD" \
+    -classpath "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" \
+    org.gradle.wrapper.GradleWrapperMain "$@"
+}
