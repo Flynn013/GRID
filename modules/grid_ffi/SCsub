@@ -1,0 +1,7 @@
+Import("env")
+Import("env_modules")
+
+env_grid_ffi = env_modules.Clone()
+
+env_grid_ffi.add_source_files(env.modules_sources, "*.cpp")
+env_grid_ffi.add_source_files(env.modules_sources, "jni/*.cpp")

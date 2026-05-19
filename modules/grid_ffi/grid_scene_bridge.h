@@ -1,0 +1,40 @@
+#pragma once
+
+#include "core/object/object.h"
+#include "core/string/ustring.h"
+
+/**
+ * GridSceneBridge exposes live Godot SceneTree manipulation to the Kotlin agent
+ * via a JNI layer (jni/grid_ffi_jni.cpp).
+ *
+ * Registered as a Godot singleton: Engine.get_singleton("GridSceneBridge")
+ */
+class GridSceneBridge : public Object {
+	GDCLASS(GridSceneBridge, Object);
+
+protected:
+	static void _bind_methods();
+
+public:
+	// Returns the live SceneTree as a JSON string for LLM context injection.
+	String get_scene_tree_json();
+
+	// Instantiates p_class_name and adds it under p_parent_path.
+	bool spawn_node(const String &p_class_name, const String &p_parent_path);
+
+	// Sets a Vector3 property on the node at p_node_path.
+	bool set_property_vector3(const String &p_node_path, const String &p_property,
+			float p_x, float p_y, float p_z);
+
+	// Loads a .glb file from the Android sandbox into the active scene.
+	bool load_glb_asset(const String &p_file_path);
+
+	// Creates an in-RAM snapshot of the current SceneTree. Returns snapshot ID.
+	int create_snapshot();
+
+	// Reverts the SceneTree to the snapshot with the given ID.
+	bool revert_to_snapshot(int p_snapshot_id);
+
+private:
+	static String _node_to_json(class Node *p_node, int p_depth = 0);
+};
