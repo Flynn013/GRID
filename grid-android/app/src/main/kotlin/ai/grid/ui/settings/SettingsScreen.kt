@@ -1,5 +1,7 @@
 package ai.grid.ui.settings
 
+import ai.grid.data.LLMProvider
+import ai.grid.data.SettingsData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,22 +20,33 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 private val BG   = Color(0xFF0A0A0A)
 private val CYAN = Color(0xFF00E5FF)
 private val CARD = Color(0xFF141414)
 private val TEXT = Color(0xFFE0E0E0)
 
-enum class LLMProvider { ANTHROPIC, GEMINI, LITERT }
-
 @Composable
-fun SettingsScreen() {
-    var activeProvider by remember { mutableStateOf(LLMProvider.ANTHROPIC) }
-    var anthropicKey by remember { mutableStateOf("") }
-    var geminiKey by remember { mutableStateOf("") }
-    var liteRtPath by remember { mutableStateOf("") }
+fun SettingsScreen(vm: SettingsViewModel) {
+    val current by vm.settings.collectAsState()
+
+    var activeProvider by remember(current.activeProvider) {
+        mutableStateOf(
+            runCatching { LLMProvider.valueOf(current.activeProvider) }
+                .getOrDefault(LLMProvider.ANTHROPIC)
+        )
+    }
+    var anthropicKey    by remember(current.anthropicKey) { mutableStateOf(current.anthropicKey) }
+    var geminiKey       by remember(current.geminiKey)    { mutableStateOf(current.geminiKey) }
+    var liteRtPath      by remember(current.liteRtPath)   { mutableStateOf(current.liteRtPath) }
     var anthropicVisible by remember { mutableStateOf(false) }
-    var geminiVisible by remember { mutableStateOf(false) }
+    var geminiVisible    by remember { mutableStateOf(false) }
+    var showSaved        by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showSaved) {
+        if (showSaved) { delay(2000); showSaved = false }
+    }
 
     Column(
         modifier = Modifier
@@ -52,7 +65,9 @@ fun SettingsScreen() {
         HorizontalDivider(color = CYAN.copy(alpha = 0.2f))
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
@@ -63,7 +78,7 @@ fun SettingsScreen() {
                         .fillMaxWidth()
                         .background(CARD, RoundedCornerShape(8.dp))
                 ) {
-                    LLMProvider.values().forEach { provider ->
+                    LLMProvider.entries.forEach { provider ->
                         val selected = activeProvider == provider
                         Box(
                             modifier = Modifier
@@ -103,7 +118,8 @@ fun SettingsScreen() {
                             )
                         }
                     },
-                    visualTransformation = if (anthropicVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    visualTransformation = if (anthropicVisible) VisualTransformation.None
+                                           else PasswordVisualTransformation(),
                     colors = fieldColors(),
                 )
             }
@@ -123,7 +139,8 @@ fun SettingsScreen() {
                             )
                         }
                     },
-                    visualTransformation = if (geminiVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    visualTransformation = if (geminiVisible) VisualTransformation.None
+                                           else PasswordVisualTransformation(),
                     colors = fieldColors(),
                 )
             }
@@ -140,11 +157,33 @@ fun SettingsScreen() {
             }
             item {
                 Button(
-                    onClick = { /* TODO: persist via DataStore */ },
+                    onClick = {
+                        vm.save(
+                            SettingsData(
+                                activeProvider = activeProvider.name,
+                                anthropicKey   = anthropicKey,
+                                geminiKey      = geminiKey,
+                                liteRtPath     = liteRtPath,
+                            )
+                        )
+                        showSaved = true
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = CYAN, contentColor = Color.Black)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CYAN,
+                        contentColor = Color.Black
+                    )
                 ) {
                     Text("SAVE CONFIG", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                }
+                if (showSaved) {
+                    Text(
+                        "✓ CONFIG SAVED",
+                        color = CYAN,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
             }
         }
@@ -165,10 +204,10 @@ private fun SectionLabel(title: String) {
 
 @Composable
 private fun fieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = Color(0xFF00E5FF),
+    focusedBorderColor   = Color(0xFF00E5FF),
     unfocusedBorderColor = Color.DarkGray,
-    focusedTextColor = Color(0xFFE0E0E0),
-    unfocusedTextColor = Color(0xFFE0E0E0),
-    cursorColor = Color(0xFF00E5FF),
-    containerColor = Color(0xFF0A0A0A),
+    focusedTextColor     = Color(0xFFE0E0E0),
+    unfocusedTextColor   = Color(0xFFE0E0E0),
+    cursorColor          = Color(0xFF00E5FF),
+    containerColor       = Color(0xFF0A0A0A),
 )

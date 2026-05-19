@@ -86,6 +86,7 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────────
   # Job 2: Build the GRID Android app APK
+  # Uses gradle/actions/setup-gradle (no wrapper JAR required).
   # ──────────────────────────────────────────────────────────────────────────────
   build-grid-apk:
     name: "GRID App — Sovereign APK"
@@ -112,11 +113,14 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
       - name: Build GRID APK (debug)
         working-directory: grid-android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload GRID APK
         uses: actions/upload-artifact@v4
