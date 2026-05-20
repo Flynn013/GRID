@@ -127,6 +127,35 @@ class ProjectRepository private constructor(private val ctx: Context) {
             appendLine(c.featuresSummary)
             appendLine()
         }
+        if (c.type == ProjectType.GAME) {
+            appendLine("## Godot Node Palette")
+            if (c.is3D) {
+                appendLine("_Key 3D nodes for this project:_")
+                appendLine("- **Node3D** — base spatial; position/rotation/scale:Vector3")
+                appendLine("- **MeshInstance3D** — mesh:Mesh, surface_override_material:Material")
+                appendLine("- **CharacterBody3D** — velocity:Vector3; move_and_slide() per frame")
+                appendLine("- **RigidBody3D** — mass, linear_velocity, gravity_scale, freeze")
+                appendLine("- **Area3D** — body_entered/area_entered signals; trigger zones")
+                appendLine("- **DirectionalLight3D** — light_energy, light_color, shadow_enabled")
+                appendLine("- **Camera3D** — fov, near, far; current=true to activate")
+                appendLine("- **CollisionShape3D** — shape: BoxShape3D|SphereShape3D|CapsuleShape3D")
+                appendLine("- **AnimationPlayer** — play(name), seek(t), stop(); speed_scale")
+                appendLine("- **NavigationAgent3D** — target_position, max_speed; velocity_computed signal")
+            } else {
+                appendLine("_Key 2D nodes for this project:_")
+                appendLine("- **Node2D** — base 2D; position:Vector2, rotation:float, z_index:int")
+                appendLine("- **Sprite2D** — texture:Texture2D, hframes, vframes, frame, centered")
+                appendLine("- **AnimatedSprite2D** — sprite_frames:SpriteFrames; play(\"name\")")
+                appendLine("- **CharacterBody2D** — velocity:Vector2; move_and_slide() per frame")
+                appendLine("- **RigidBody2D** — mass, gravity_scale, linear_velocity, lock_rotation")
+                appendLine("- **Area2D** — body_entered/area_entered signals; hitboxes, pickups")
+                appendLine("- **Camera2D** — zoom:Vector2, limits, position_smoothing_enabled")
+                appendLine("- **TileMapLayer** — tile_set:TileSet; set_cell(Vector2i, src_id, coords)")
+                appendLine("- **AnimationPlayer** — play(name), seek(t), stop(); speed_scale")
+                appendLine("- **CollisionShape2D** — shape: RectangleShape2D|CircleShape2D|CapsuleShape2D")
+            }
+            appendLine()
+        }
         appendLine("## Sprint Log")
         appendLine("<!-- CLU will append sprint notes here -->")
     }
