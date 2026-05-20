@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.*
@@ -25,19 +24,22 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import ai.grid.agent.CLUAgent
 import ai.grid.agent.Message
 import ai.grid.agent.Role
+import com.halilibo.richtext.commonmark.Markdown
+import com.halilibo.richtext.ui.material3.Material3RichText
 import kotlinx.coroutines.launch
 
-private val BG   = Color(0xFF0A0A0A)
-private val CYAN = Color(0xFF00E5FF)
-private val CARD = Color(0xFF141414)
-private val TEXT = Color(0xFFE0E0E0)
+private val BG      = Color(0xFF0A0A0A)
+private val CYAN    = Color(0xFF00E5FF)
+private val CARD    = Color(0xFF141414)
+private val TEXT    = Color(0xFFE0E0E0)
+private val TOOL_BG = Color(0xFF0D1F1F)
 
 @Composable
 fun SessionScreen(
     onNavigateToStage: () -> Unit,
     agent: CLUAgent = viewModel(),
 ) {
-    val messages by agent.messages.collectAsState()
+    val messages   by agent.messages.collectAsState()
     val isThinking by agent.isThinking.collectAsState()
     val activeTask by agent.activeTask.collectAsState()
     var input by remember { mutableStateOf("") }
@@ -64,13 +66,15 @@ fun SessionScreen(
             Column {
                 Text(
                     "GRID // SESSION",
-                    color = CYAN,
-                    fontSize = 18.sp,
+                    color = CYAN, fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
                 if (activeTask != null) {
-                    Text(activeTask!!, color = Color.Gray, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Text(
+                        activeTask!!, color = Color.Gray,
+                        fontSize = 11.sp, fontFamily = FontFamily.Monospace
+                    )
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -114,14 +118,20 @@ fun SessionScreen(
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Command CLU...", color = Color.Gray, fontFamily = FontFamily.Monospace) },
+                placeholder = {
+                    Text(
+                        "Command CLU...",
+                        color = Color.Gray,
+                        fontFamily = FontFamily.Monospace
+                    )
+                },
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = CYAN,
+                    focusedBorderColor   = CYAN,
                     unfocusedBorderColor = Color.DarkGray,
-                    focusedTextColor = TEXT,
-                    unfocusedTextColor = TEXT,
-                    cursorColor = CYAN,
-                    containerColor = BG,
+                    focusedTextColor     = TEXT,
+                    unfocusedTextColor   = TEXT,
+                    cursorColor          = CYAN,
+                    containerColor       = BG,
                 ),
                 shape = RoundedCornerShape(8.dp),
                 maxLines = 4,
@@ -146,45 +156,74 @@ fun SessionScreen(
 @Composable
 private fun MessageBubble(msg: Message) {
     val isUser = msg.role == Role.USER
-    val bgColor = if (isUser) Color(0xFF1A2A2A) else Color(0xFF141414)
-    val textColor = if (isUser) Color(0xFF80FFFF) else Color(0xFFE0E0E0)
+    val isTool = msg.role == Role.TOOL
 
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
-    ) {
+    when {
+        isTool -> ToolBubble(msg.content)
+        isUser -> UserBubble(msg.content)
+        else   -> AssistantBubble(msg.content)
+    }
+}
+
+@Composable
+private fun UserBubble(content: String) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        SelectionContainer {
+            Text(
+                content,
+                color = Color(0xFF80FFFF),
+                fontSize = 14.sp,
+                modifier = Modifier
+                    .widthIn(max = 300.dp)
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp))
+                    .background(Color(0xFF1A2A2A))
+                    .padding(12.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AssistantBubble(content: String) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
         Column(
             modifier = Modifier
-                .widthIn(max = 320.dp)
-                .clip(
-                    RoundedCornerShape(
-                        topStart = if (isUser) 16.dp else 4.dp,
-                        topEnd = if (isUser) 4.dp else 16.dp,
-                        bottomStart = 16.dp,
-                        bottomEnd = 16.dp,
-                    )
-                )
-                .background(bgColor)
+                .widthIn(max = 340.dp)
+                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp))
+                .background(Color(0xFF141414))
                 .padding(12.dp)
         ) {
-            if (!isUser) {
-                Text(
-                    "CLU",
-                    color = Color(0xFF00E5FF),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-            }
+            Text(
+                "CLU",
+                color = CYAN, fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
             SelectionContainer {
-                Text(
-                    msg.content,
-                    color = textColor,
-                    fontSize = 14.sp,
-                    fontFamily = if (msg.isCode) FontFamily.Monospace else FontFamily.Default
-                )
+                Material3RichText {
+                    Markdown(content)
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun ToolBubble(content: String) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+        SelectionContainer {
+            Text(
+                content,
+                color = CYAN.copy(alpha = 0.7f),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .widthIn(max = 340.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(TOOL_BG)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            )
         }
     }
 }

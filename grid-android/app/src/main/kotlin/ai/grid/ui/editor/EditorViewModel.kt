@@ -92,11 +92,17 @@ class EditorViewModel : ViewModel() {
     private fun flattenTree(raw: String): List<SceneNode> {
         val out = mutableListOf<SceneNode>()
         try {
-            val root = parser.parseToJsonElement(raw).jsonObject
-            if (root.containsKey("nodes")) {
-                root["nodes"]?.jsonArray?.forEach { collect(it.jsonObject, out, 0) }
-            } else {
-                collect(root, out, 0)
+            val obj = parser.parseToJsonElement(raw).jsonObject
+            when {
+                // Stub format: {"nodes":[]}
+                obj.containsKey("nodes") ->
+                    obj["nodes"]?.jsonArray?.forEach { collect(it.jsonObject, out, 0) }
+                // Live Godot format: {"root":{name, class, path, children:[]}}
+                obj.containsKey("root")  ->
+                    collect(obj["root"]!!.jsonObject, out, 0)
+                // Direct node object / fallback
+                else ->
+                    collect(obj, out, 0)
             }
         } catch (_: Exception) {}
         return out
