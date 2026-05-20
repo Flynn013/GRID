@@ -61,9 +61,9 @@ object GodotFFITools {
         ))
         add(toolDef(
             name = "project_append_sprint",
-            description = "Appends a sprint-summary note to GDD_MASTER.md and commits it with JGit. Call at the end of a productive session to record what was built and what’s next.",
+            description = "Appends a sprint-summary note to GDD_MASTER.md and commits it with JGit. Call at the end of a productive session to record what was built and what's next.",
             params = buildJsonObject {
-                put("sprint_note", prop("string", "Markdown-formatted sprint summary: what was accomplished, what’s next, open issues."))
+                put("sprint_note", prop("string", "Markdown-formatted sprint summary: what was accomplished, what's next, open issues."))
             },
             required = listOf("sprint_note")
         ))
@@ -97,6 +97,11 @@ object GodotFFITools {
                 })
             })
         }
+    }
+
+    // Plain (name, description) pairs for local-model prompt injection.
+    val toolDescriptions: List<Pair<String, String>> = toolDefs.map {
+        it["name"]!!.jsonPrimitive.content to it["description"]!!.jsonPrimitive.content
     }
 
     suspend fun dispatch(toolName: String, args: JsonObject): String {

@@ -67,8 +67,9 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
     private val _activeTask = MutableStateFlow<String?>(null)
     val activeTask: StateFlow<String?> = _activeTask.asStateFlow()
 
-    private val apiHistory = mutableListOf<ApiEntry>()
+    private val apiHistory   = mutableListOf<ApiEntry>()
     private var systemPrompt = BASE_SYSTEM
+    private var liteRtEngine: LiteRTEngine? = null
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val http = HttpClient(OkHttp) {
@@ -85,7 +86,7 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun send(userText: String) {
-        // Rebuild system prompt with live project + GDD context
+        // Rebuild system prompt with live project + GDD context.
         systemPrompt = buildSystemPrompt()
 
         apiHistory.add(ApiEntry.UserText(userText))
@@ -95,7 +96,7 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
             when (runCatching { LLMProvider.valueOf(config.activeProvider) }.getOrDefault(LLMProvider.ANTHROPIC)) {
                 LLMProvider.ANTHROPIC -> runAnthropicLoop()
                 LLMProvider.GEMINI    -> runGeminiLoop()
-                LLMProvider.LITERT    -> emit("LiteRT local inference — coming in Sprint 2.")
+                LLMProvider.LITERT    -> runLocalLoop()
             }
         } finally {
             _isThinking.value = false
@@ -358,6 +359,122 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ── LiteRT local inference ─────────────────────────────────────────────
+
+    private suspend fun runLocalLoop(maxRounds: Int = 6) {
+        if (config.liteRtPath.isBlank()) {
+            emit("No local model path configured. Go to VENDOR → set LiteRT model path (e.g. /data/local/tmp/gemma-2b.litertlm).")
+            return
+        }
+
+        val engine = liteRtEngine ?: LiteRTEngine().also { liteRtEngine = it }
+
+        val loadResult = withContext(Dispatchers.IO) {
+            engine.loadModelBlocking(config.liteRtPath)
+        }
+        if (loadResult.isFailure) {
+            emit("Failed to load local model: ${loadResult.exceptionOrNull()?.message}")
+            return
+        }
+
+        repeat(maxRounds) {
+            val prompt = buildLocalPrompt()
+            _activeTask.value = "local model..."
+
+            val genResult = withContext(Dispatchers.IO) {
+                engine.generateOnce(prompt)
+            }
+            _activeTask.value = null
+
+            if (genResult.isFailure) {
+                emit("Local inference error: ${genResult.exceptionOrNull()?.message}")
+                return
+            }
+
+            val rawResponse = genResult.getOrThrow().trim()
+            if (rawResponse.isBlank()) return
+
+            val toolCallRegex   = Regex("""<tool_call>(.*?)</tool_call>""", RegexOption.DOT_MATCHES_ALL)
+            val toolMatches     = toolCallRegex.findAll(rawResponse).toList()
+            val textContent     = rawResponse.replace(toolCallRegex, "").trim()
+            val assistantBlocks = mutableListOf<Block>()
+            val pendingTools    = mutableListOf<Triple<String, String, JsonObject>>()
+
+            if (textContent.isNotBlank()) {
+                assistantBlocks.add(Block.Text(textContent))
+                _messages.update { it + Message(Role.ASSISTANT, textContent) }
+            }
+
+            for (match in toolMatches) {
+                try {
+                    val callObj = json.parseToJsonElement(match.groupValues[1].trim()).jsonObject
+                    val name  = callObj["name"]?.jsonPrimitive?.content  ?: continue
+                    val input = callObj["input"]?.jsonObject ?: buildJsonObject {}
+                    val id    = "l-${name}-${System.currentTimeMillis()}"
+                    assistantBlocks.add(Block.ToolUse(id, name, input))
+                    pendingTools.add(Triple(id, name, input))
+                } catch (_: Exception) {}
+            }
+
+            if (assistantBlocks.isNotEmpty()) apiHistory.add(ApiEntry.AssistantBlocks(assistantBlocks))
+
+            for ((id, name, input) in pendingTools) {
+                _activeTask.value = "→ $name"
+                val result = GodotFFITools.dispatch(name, input)
+                _activeTask.value = null
+                apiHistory.add(ApiEntry.ToolResult(id, name, result))
+                _messages.update { it + Message(Role.TOOL, "$name → $result", toolCallId = id) }
+            }
+
+            if (pendingTools.isEmpty()) return
+        }
+    }
+
+    /**
+     * Formats the full apiHistory + system prompt + tool descriptions into a
+     * single plain-text prompt for stateless local-model completion.
+     * Models that follow the <tool_call> convention will produce parseable output;
+     * those that don't will still produce readable text responses.
+     */
+    private fun buildLocalPrompt(): String = buildString {
+        appendLine(systemPrompt)
+        appendLine()
+        appendLine("## Tool-Calling Instructions")
+        appendLine("To call a tool, output a JSON object wrapped in <tool_call> tags on its own line:")
+        appendLine("""<tool_call>{"name":"tool_name","input":{"param":"value"}}</tool_call>""")
+        appendLine("Only use valid tool names listed below. Free text before or after the tag is shown to the user.")
+        appendLine()
+        appendLine("### Available Tools")
+        GodotFFITools.toolDescriptions.forEach { (name, desc) ->
+            appendLine("- $name: $desc")
+        }
+        appendLine()
+        appendLine("---")
+        appendLine()
+
+        for (entry in apiHistory) {
+            when (entry) {
+                is ApiEntry.UserText -> appendLine("User: ${entry.text}")
+                is ApiEntry.AssistantBlocks -> {
+                    val rendered = buildString {
+                        entry.blocks.forEach { b ->
+                            when (b) {
+                                is Block.Text    -> appendLine(b.text)
+                                is Block.ToolUse -> appendLine(
+                                    """<tool_call>{"name":"${b.name}","input":${b.input}}</tool_call>"""
+                                )
+                            }
+                        }
+                    }.trim()
+                    if (rendered.isNotBlank()) appendLine("Assistant: $rendered")
+                }
+                is ApiEntry.ToolResult ->
+                    appendLine("Tool [${entry.name}]: ${entry.result.take(800)}")
+            }
+        }
+        append("Assistant:")
+    }
+
     private fun emit(text: String) {
         _messages.update { it + Message(Role.ASSISTANT, text) }
     }
@@ -365,5 +482,6 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         http.close()
+        liteRtEngine?.shutdown()
     }
 }
