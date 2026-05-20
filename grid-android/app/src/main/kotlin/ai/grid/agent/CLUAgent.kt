@@ -21,6 +21,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import java.io.File
 
@@ -42,6 +45,70 @@ private sealed class ApiEntry {
 private sealed class Block {
     data class Text(val text: String) : Block()
     class  ToolUse(val id: String, val name: String, val input: JsonObject) : Block()
+}
+
+// ── History persistence types ─────────────────────────────────────────────
+
+@Serializable
+private data class SavedMessage(
+    val role: String,
+    val content: String,
+    val isCode: Boolean = false,
+    val toolCallId: String? = null,
+)
+
+@Serializable
+private data class SavedBlock(
+    val type: String,
+    val text: String? = null,
+    val id: String? = null,
+    val name: String? = null,
+    val inputJson: String? = null,
+)
+
+@Serializable
+private data class SavedEntry(
+    val type: String,
+    val text: String? = null,
+    val blocks: List<SavedBlock>? = null,
+    val id: String? = null,
+    val name: String? = null,
+    val result: String? = null,
+)
+
+@Serializable
+private data class HistoryFile(
+    val messages: List<SavedMessage>,
+    val entries: List<SavedEntry>,
+)
+
+private fun Message.toSaved() = SavedMessage(role.name, content, isCode, toolCallId)
+private fun SavedMessage.toMessage() = Message(Role.valueOf(role), content, isCode, toolCallId)
+
+private fun Block.toSaved(): SavedBlock = when (this) {
+    is Block.Text    -> SavedBlock("text", text = text)
+    is Block.ToolUse -> SavedBlock("tool_use", id = id, name = name, inputJson = input.toString())
+}
+
+private fun SavedBlock.toBlock(json: Json): Block? = when (type) {
+    "text"     -> text?.let { Block.Text(it) }
+    "tool_use" -> if (id != null && name != null && inputJson != null)
+        runCatching { Block.ToolUse(id, name, json.parseToJsonElement(inputJson).jsonObject) }.getOrNull()
+    else null
+    else       -> null
+}
+
+private fun ApiEntry.toSaved(): SavedEntry = when (this) {
+    is ApiEntry.UserText        -> SavedEntry("user",        text   = text)
+    is ApiEntry.AssistantBlocks -> SavedEntry("assistant",   blocks = blocks.map { it.toSaved() })
+    is ApiEntry.ToolResult      -> SavedEntry("tool_result", id     = id, name = name, result = result)
+}
+
+private fun SavedEntry.toApiEntry(json: Json): ApiEntry? = when (type) {
+    "user"        -> text?.let { ApiEntry.UserText(it) }
+    "assistant"   -> blocks?.mapNotNull { it.toBlock(json) }?.let { ApiEntry.AssistantBlocks(it) }
+    "tool_result" -> if (id != null && name != null && result != null) ApiEntry.ToolResult(id, name, result) else null
+    else          -> null
 }
 
 private const val BASE_SYSTEM = """
@@ -118,11 +185,20 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch { settingsRepo.flow.collect { config = it } }
+        viewModelScope.launch {
+            projectRepo.activeProjectFlow.collect { project ->
+                project?.gddPath?.let { loadHistory(it) } ?: run {
+                    apiHistory.clear()
+                    _messages.value = emptyList()
+                }
+            }
+        }
     }
 
     fun clearHistory() {
         apiHistory.clear()
         _messages.value = emptyList()
+        viewModelScope.launch(Dispatchers.IO) { historyFilePath()?.delete() }
     }
 
     suspend fun send(userText: String) {
@@ -142,6 +218,7 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
         } finally {
             _isThinking.value = false
             _activeTask.value = null
+            saveHistory()
         }
     }
 
@@ -526,6 +603,43 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
             }
         }
         append("Assistant:")
+    }
+
+    // ── History persistence ───────────────────────────────────────────────
+
+    private fun historyFilePath(): File? {
+        val gddPath = GodotFFITools.activeGddPath ?: return null
+        return File(File(gddPath).parent, "clu_history.json")
+    }
+
+    private suspend fun saveHistory() = withContext(Dispatchers.IO) {
+        val file = historyFilePath() ?: return@withContext
+        runCatching {
+            val data = HistoryFile(
+                messages = _messages.value.map { it.toSaved() },
+                entries  = apiHistory.map { it.toSaved() },
+            )
+            file.writeText(json.encodeToString(data))
+        }
+    }
+
+    private suspend fun loadHistory(gddPath: String) = withContext(Dispatchers.IO) {
+        val file = File(File(gddPath).parent, "clu_history.json")
+        if (!file.exists()) {
+            apiHistory.clear()
+            _messages.value = emptyList()
+            return@withContext
+        }
+        runCatching {
+            val data = json.decodeFromString<HistoryFile>(file.readText())
+            apiHistory.clear()
+            apiHistory.addAll(data.entries.mapNotNull { it.toApiEntry(json) })
+            _messages.value = data.messages.map { it.toMessage() }
+        }.onFailure {
+            apiHistory.clear()
+            _messages.value = emptyList()
+            file.delete()
+        }
     }
 
     private fun emit(text: String) {
