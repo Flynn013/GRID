@@ -78,6 +78,13 @@ object GodotBridge {
         try { gridExecuteGdscript(code) }
         catch (_: UnsatisfiedLinkError) { "{\"ok\":false,\"error\":\"stub_mode\"}" }
 
+    fun deleteNode(nodePath: String): Boolean =
+        try { gridDeleteNode(nodePath) } catch (_: UnsatisfiedLinkError) { false }
+
+    /** Sets any property via a JSON-encoded value. Use "3.14" for float, "\"text\"" for String, etc. */
+    fun setProperty(nodePath: String, property: String, valueJson: String): Boolean =
+        try { gridSetProperty(nodePath, property, valueJson) } catch (_: UnsatisfiedLinkError) { false }
+
     // ── JNI declarations ─ implemented in modules/grid_ffi/jni/grid_ffi_jni.cpp ──────────────────────
     private external fun gridGetSceneTree(): String
     private external fun gridSpawnNode(className: String, parentPath: String): Boolean
@@ -87,4 +94,6 @@ object GodotBridge {
     private external fun gridCreateSnapshot(): Int
     private external fun gridRevertToSnapshot(snapshotId: Int): Boolean
     private external fun gridExecuteGdscript(code: String): String
+    private external fun gridDeleteNode(nodePath: String): Boolean
+    private external fun gridSetProperty(nodePath: String, property: String, valueJson: String): Boolean
 }

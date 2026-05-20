@@ -58,8 +58,26 @@ object GodotFFITools {
             required = emptyList()
         ))
         add(toolDef(
+            name = "godot_delete_node",
+            description = "Removes a node from the live SceneTree by path (queue_free). Use to clean up nodes created in error or restructure the scene.",
+            params = buildJsonObject {
+                put("node_path", prop("string", "Full scene path e.g. /root/World/Player"))
+            },
+            required = listOf("node_path")
+        ))
+        add(toolDef(
+            name = "godot_set_property",
+            description = "Sets any property on a node using a JSON-encoded value. Supports all JSON-serializable types: numbers (3.14), strings (\"hello\"), booleans (true/false), arrays ([1,2,3]).",
+            params = buildJsonObject {
+                put("node_path",   prop("string", "Full scene path e.g. /root/World/Player"))
+                put("property",    prop("string", "Property name e.g. visible, health, speed"))
+                put("value_json",  prop("string", "JSON-encoded value e.g. 3.14 or true or \"walk\""))
+            },
+            required = listOf("node_path", "property", "value_json")
+        ))
+        add(toolDef(
             name = "godot_execute_gdscript",
-            description = "Compiles and runs arbitrary GDScript code with full Godot engine access. Use Engine.get_main_loop() inside the script to access the SceneTree. Can spawn any node type, set any property, connect signals, play animations, create resources. Returns JSON {ok, result}.",
+            description = "Compiles and runs arbitrary GDScript code with full Godot engine access. 'tree' (the SceneTree) is pre-injected — use it directly without declaring it. Can spawn any node type, set any property, connect signals, play animations, create resources. Returns JSON {ok, result}.",
             params = buildJsonObject {
                 put("code", prop("string", "GDScript code to execute. Do NOT include 'extends' or 'func _run():' — just write the body lines directly. Use Engine.get_main_loop() for tree access."))
             },
@@ -175,6 +193,21 @@ object GodotFFITools {
                 GodotBridge.ensureLoaded()
                 val id = GodotBridge.createSnapshot()
                 if (id >= 0) "Snapshot created: id=$id" else "error: snapshot failed"
+            }
+            "godot_delete_node" -> {
+                GodotBridge.ensureLoaded()
+                val path = args["node_path"]?.jsonPrimitive?.content ?: return "error: missing node_path"
+                if (GodotBridge.deleteNode(path)) "Deleted: $path" else "error: node not found or is root"
+            }
+            "godot_set_property" -> {
+                GodotBridge.ensureLoaded()
+                val path  = args["node_path"]?.jsonPrimitive?.content   ?: return "error: missing node_path"
+                val prop  = args["property"]?.jsonPrimitive?.content     ?: return "error: missing property"
+                val value = args["value_json"]?.let {
+                    // value_json may be a JSON literal passed as a string or already-embedded JSON
+                    it.jsonPrimitive.contentOrNull ?: it.toString()
+                } ?: return "error: missing value_json"
+                if (GodotBridge.setProperty(path, prop, value)) "Set $prop on $path" else "error: failed"
             }
             "godot_execute_gdscript" -> {
                 GodotBridge.ensureLoaded()

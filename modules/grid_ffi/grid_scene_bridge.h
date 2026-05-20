@@ -41,8 +41,15 @@ public:
 
 	// Compiles and runs arbitrary GDScript code in a RefCounted context.
 	// Returns JSON: {"ok":true,"result":<variant>} or {"ok":false,"error":"..."}
-	// Inside the script, use Engine.get_main_loop() to access the SceneTree.
+	// "tree" is pre-injected as a class variable pointing to the live SceneTree.
 	String execute_gdscript(const String &p_code);
+
+	// Removes the node at p_node_path from the tree (queue_free). Returns false if not found.
+	bool delete_node(const String &p_node_path);
+
+	// Sets any property on a node using a JSON-encoded Variant value string.
+	// value_json: a JSON literal — "3.14" (float), "\"hello\"" (String), "true" (bool), etc.
+	bool set_property(const String &p_node_path, const String &p_property, const String &p_value_json);
 
 private:
 	static String _node_to_json(class Node *p_node, int p_depth = 0);

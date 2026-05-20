@@ -35,6 +35,10 @@ void GridSceneBridge::_bind_methods() {
 			&GridSceneBridge::revert_to_snapshot);
 	ClassDB::bind_method(D_METHOD("execute_gdscript", "code"),
 			&GridSceneBridge::execute_gdscript);
+	ClassDB::bind_method(D_METHOD("delete_node", "node_path"),
+			&GridSceneBridge::delete_node);
+	ClassDB::bind_method(D_METHOD("set_property", "node_path", "property", "value_json"),
+			&GridSceneBridge::set_property);
 }
 
 String GridSceneBridge::get_scene_tree_json() {
@@ -179,9 +183,9 @@ bool GridSceneBridge::revert_to_snapshot(int p_snapshot_id) {
 }
 
 String GridSceneBridge::execute_gdscript(const String &p_code) {
-	// Wrap user code in a RefCounted subclass with a _run() entry point.
-	// Inside _run(), Engine.get_main_loop() gives access to the SceneTree.
-	String src = "extends RefCounted\n\nfunc _run():\n";
+	// Wrap user code in a RefCounted subclass.
+	// "tree" is pre-injected at class level — no need to declare it in user code.
+	String src = "extends RefCounted\n\nvar tree = Engine.get_main_loop()\n\nfunc _run():\n";
 	PackedStringArray lines = p_code.split("\n");
 	for (int i = 0; i < lines.size(); i++) {
 		src += "\t" + lines[i] + "\n";
@@ -222,4 +226,33 @@ String GridSceneBridge::execute_gdscript(const String &p_code) {
 	}
 
 	return "{\"ok\":true,\"result\":" + JSON::stringify(ret) + "}";
+}
+
+bool GridSceneBridge::delete_node(const String &p_node_path) {
+	SceneTree *tree = SceneTree::get_singleton();
+	if (!tree) {
+		return false;
+	}
+	Node *node = tree->get_root()->get_node_or_null(NodePath(p_node_path));
+	if (!node || node == tree->get_root()) {
+		return false;
+	}
+	node->queue_free();
+	return true;
+}
+
+bool GridSceneBridge::set_property(const String &p_node_path, const String &p_property,
+		const String &p_value_json) {
+	SceneTree *tree = SceneTree::get_singleton();
+	if (!tree) {
+		return false;
+	}
+	Node *node = tree->get_root()->get_node_or_null(NodePath(p_node_path));
+	if (!node) {
+		return false;
+	}
+	// JSON::parse_string() returns Null on failure; distinguish via type check after.
+	Variant value = JSON::parse_string(p_value_json);
+	node->set(p_property, value);
+	return true;
 }

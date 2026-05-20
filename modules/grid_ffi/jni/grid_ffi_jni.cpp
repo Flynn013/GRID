@@ -98,4 +98,22 @@ JNIEXPORT jstring JNICALL Java_ai_grid_bridge_GodotBridge_gridExecuteGdscript(
 	return env->NewStringUTF(result.utf8().get_data());
 }
 
+JNIEXPORT jboolean JNICALL Java_ai_grid_bridge_GodotBridge_gridDeleteNode(
+		JNIEnv *env, jobject thiz, jstring node_path) {
+	GridSceneBridge *bridge = get_bridge();
+	if (!bridge) return JNI_FALSE;
+	return bridge->delete_node(jstring_to_string(node_path, env)) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_ai_grid_bridge_GodotBridge_gridSetProperty(
+		JNIEnv *env, jobject thiz, jstring node_path, jstring property, jstring value_json) {
+	GridSceneBridge *bridge = get_bridge();
+	if (!bridge) return JNI_FALSE;
+	return bridge->set_property(
+			jstring_to_string(node_path, env),
+			jstring_to_string(property, env),
+			jstring_to_string(value_json, env)
+	) ? JNI_TRUE : JNI_FALSE;
+}
+
 } // extern "C"

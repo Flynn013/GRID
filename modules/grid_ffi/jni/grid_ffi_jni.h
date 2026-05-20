@@ -11,5 +11,7 @@ JNIEXPORT jboolean JNICALL Java_ai_grid_bridge_GodotBridge_gridLoadAsset(JNIEnv 
 JNIEXPORT jint     JNICALL Java_ai_grid_bridge_GodotBridge_gridCreateSnapshot(JNIEnv *env, jobject thiz);
 JNIEXPORT jboolean JNICALL Java_ai_grid_bridge_GodotBridge_gridRevertToSnapshot(JNIEnv *env, jobject thiz, jint snapshot_id);
 JNIEXPORT jstring  JNICALL Java_ai_grid_bridge_GodotBridge_gridExecuteGdscript(JNIEnv *env, jobject thiz, jstring code);
+JNIEXPORT jboolean JNICALL Java_ai_grid_bridge_GodotBridge_gridDeleteNode(JNIEnv *env, jobject thiz, jstring node_path);
+JNIEXPORT jboolean JNICALL Java_ai_grid_bridge_GodotBridge_gridSetProperty(JNIEnv *env, jobject thiz, jstring node_path, jstring property, jstring value_json);
 
 } // extern "C"

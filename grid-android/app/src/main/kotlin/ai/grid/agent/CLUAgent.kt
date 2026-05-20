@@ -57,10 +57,8 @@ You have FULL Godot 4 engine access via tool calls. You can build complete 2D an
 6. Call project_append_sprint at session end to commit progress.
 
 ## GDScript Execution Pattern
-godot_execute_gdscript wraps your code in func _run() inside a RefCounted subclass.
-Access the live SceneTree: var tree = Engine.get_main_loop()
+godot_execute_gdscript wraps your code in func _run(). "tree" (SceneTree) is pre-injected.
 Example — spawn a CharacterBody3D and position it:
-  var tree = Engine.get_main_loop()
   var player = CharacterBody3D.new()
   player.name = "Player"
   tree.root.add_child(player)
