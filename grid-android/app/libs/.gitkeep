@@ -1,0 +1,4 @@
+# Place godot-lib.release.aar here.
+# Built automatically by the GitHub Actions workflow build-grid-apk.yml.
+# For local development without a compiled Godot engine, this directory can
+# remain empty — the app will run in UI-stub mode (GodotFragment not loaded).

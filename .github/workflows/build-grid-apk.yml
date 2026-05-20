@@ -1,0 +1,136 @@
+name: GRID — Build Sovereign APK
+
+on:
+  push:
+    branches: [ "claude/grid-engine-ide-wOB4A", "master" ]
+    paths:
+      - 'grid-android/**'
+      - 'modules/grid_ffi/**'
+      - 'platform/android/**'
+      - '.github/workflows/build-grid-apk.yml'
+  workflow_dispatch:
+    inputs:
+      rebuild_engine:
+        description: 'Force-rebuild Godot engine (slow: ~45 min)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  NDK_VERSION:  "26.3.11579264"
+  JAVA_VERSION: "17"
+
+jobs:
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Job 1: Compile Godot (arm64) + package godot-lib.aar
+  # ──────────────────────────────────────────────────────────────────────────────
+  build-godot-aar:
+    name: "Engine — Godot ARM64 AAR"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout GRID
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Cache SCons artifacts
+        id: scons-cache
+        uses: actions/cache@v4
+        with:
+          path: .scons-cache
+          key: scons-android-arm64-${{ hashFiles('core/**', 'drivers/**', 'modules/**', 'platform/android/**', 'servers/**', 'scene/**', 'SConstruct') }}
+          restore-keys: scons-android-arm64-
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK ${{ env.NDK_VERSION }}
+        run: sdkmanager "ndk;${{ env.NDK_VERSION }}"
+
+      - name: Install Python + SCons
+        run: pip install scons
+
+      - name: Compile Godot for Android arm64 (release template)
+        run: |
+          scons \
+            platform=android \
+            arch=arm64 \
+            target=template_release \
+            use_lto=no \
+            use_static_cpp=yes \
+            ANDROID_NDK_ROOT="$ANDROID_NDK_HOME" \
+            cache=.scons-cache \
+            -j$(nproc)
+
+      - name: Build godot-lib.aar
+        working-directory: platform/android/java
+        run: |
+          chmod +x gradlew
+          ./gradlew :lib:assembleRelease --no-daemon
+
+      - name: Upload godot-lib.aar
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-lib-aar
+          path: platform/android/java/lib/build/outputs/aar/godot-lib.release.aar
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Job 2: Build the GRID Android app APK
+  # Uses gradle/actions/setup-gradle (no wrapper JAR required).
+  # ──────────────────────────────────────────────────────────────────────────────
+  build-grid-apk:
+    name: "GRID App — Sovereign APK"
+    runs-on: ubuntu-22.04
+    needs: build-godot-aar
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout GRID
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      - name: Download godot-lib.aar
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-lib-aar
+          path: grid-android/app/libs/
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Build GRID APK (debug)
+        working-directory: grid-android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload GRID APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GRID-sovereign-apk-debug
+          path: grid-android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: APK size report
+        run: |
+          APK=$(find grid-android/app/build/outputs/apk -name '*.apk' | head -1)
+          echo "Built: $APK"
+          du -sh "$APK"
