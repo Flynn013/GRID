@@ -7,6 +7,7 @@ import ai.grid.ui.editor.EditorViewModel
 import ai.grid.ui.files.FilesScreen
 import ai.grid.ui.files.FilesViewModel
 import ai.grid.ui.projects.ProjectsScreen
+import ai.grid.ui.projects.ProjectsViewModel
 import ai.grid.ui.session.SessionScreen
 import ai.grid.ui.settings.SettingsScreen
 import ai.grid.ui.settings.SettingsViewModel
@@ -27,6 +28,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -60,11 +62,14 @@ private val ALL_SCREENS = listOf(
 
 @Composable
 fun GRIDNavGraph(modifier: Modifier = Modifier) {
-    // All ViewModels created before NavHost — activity-scoped, survive tab switches.
-    val cluAgent:   CLUAgent          = viewModel()
-    val settingsVm: SettingsViewModel = viewModel()
-    val editorVm:   EditorViewModel   = viewModel()
-    val filesVm:    FilesViewModel    = viewModel()
+    // All ViewModels at activity scope — survive tab switches.
+    val cluAgent:   CLUAgent           = viewModel()
+    val settingsVm: SettingsViewModel  = viewModel()
+    val editorVm:   EditorViewModel    = viewModel()
+    val filesVm:    FilesViewModel     = viewModel()
+    val projectsVm: ProjectsViewModel  = viewModel()
+
+    val activeProject by projectsVm.activeProject.collectAsState()
 
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -118,9 +123,14 @@ fun GRIDNavGraph(modifier: Modifier = Modifier) {
                 )
             }
             composable(Screen.Projects.route) {
-                ProjectsScreen(onNavigateToSession = { navController.navigate(Screen.Session.route) })
+                ProjectsScreen(
+                    onNavigateToSession = { navController.navigate(Screen.Session.route) },
+                    vm = projectsVm,
+                )
             }
-            composable(Screen.Stage.route)    { StageScreen() }
+            composable(Screen.Stage.route)    {
+                StageScreen(projectPath = activeProject?.path)
+            }
             composable(Screen.Editor.route)   { EditorScreen(vm = editorVm) }
             composable(Screen.Files.route)    { FilesScreen(vm = filesVm) }
             composable(Screen.Codex.route)    { CodexScreen() }
