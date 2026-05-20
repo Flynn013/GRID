@@ -1,6 +1,10 @@
 #include "grid_scene_bridge.h"
 
 #include "core/config/engine.h"
+#include "core/io/json.h"
+#include "core/object/ref_counted.h"
+#include "core/string/string_name.h"
+#include "modules/gdscript/gdscript.h"
 #include "scene/main/node.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
@@ -29,6 +33,8 @@ void GridSceneBridge::_bind_methods() {
 			&GridSceneBridge::create_snapshot);
 	ClassDB::bind_method(D_METHOD("revert_to_snapshot", "snapshot_id"),
 			&GridSceneBridge::revert_to_snapshot);
+	ClassDB::bind_method(D_METHOD("execute_gdscript", "code"),
+			&GridSceneBridge::execute_gdscript);
 }
 
 String GridSceneBridge::get_scene_tree_json() {
@@ -170,4 +176,50 @@ bool GridSceneBridge::revert_to_snapshot(int p_snapshot_id) {
 		return false;
 	}
 	return tree->change_scene_to_packed(it->second) == OK;
+}
+
+String GridSceneBridge::execute_gdscript(const String &p_code) {
+	// Wrap user code in a RefCounted subclass with a _run() entry point.
+	// Inside _run(), Engine.get_main_loop() gives access to the SceneTree.
+	String src = "extends RefCounted\n\nfunc _run():\n";
+	PackedStringArray lines = p_code.split("\n");
+	for (int i = 0; i < lines.size(); i++) {
+		src += "\t" + lines[i] + "\n";
+	}
+	src += "\treturn null\n";
+
+	Ref<GDScript> scr;
+	scr.instantiate();
+	scr->set_source_code(src);
+
+	Error compile_err = scr->reload(false);
+	if (compile_err != OK) {
+		return "{\"ok\":false,\"error\":\"compile_failed\",\"code\":" + itos((int)compile_err) + "}";
+	}
+
+	StringName base_type = scr->get_native()->get_name();
+	Object *raw = ClassDB::instantiate(base_type);
+	if (!raw) {
+		return "{\"ok\":false,\"error\":\"instantiate_failed\"}";
+	}
+
+	Ref<RefCounted> guard;
+	if (raw->is_ref_counted()) {
+		guard = Ref<RefCounted>(Object::cast_to<RefCounted>(raw));
+	}
+	raw->set_script(scr);
+
+	Callable::CallError ce;
+	Variant ret;
+	raw->callp(StringName("_run"), nullptr, 0, ret, ce);
+
+	if (!raw->is_ref_counted()) {
+		memdelete(raw);
+	}
+
+	if (ce.error != Callable::CallError::CALL_OK) {
+		return "{\"ok\":false,\"error\":\"runtime_error\",\"code\":" + itos((int)ce.error) + "}";
+	}
+
+	return "{\"ok\":true,\"result\":" + JSON::stringify(ret) + "}";
 }

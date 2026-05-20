@@ -39,6 +39,11 @@ public:
 	// Reverts the SceneTree to the snapshot with the given ID.
 	bool revert_to_snapshot(int p_snapshot_id);
 
+	// Compiles and runs arbitrary GDScript code in a RefCounted context.
+	// Returns JSON: {"ok":true,"result":<variant>} or {"ok":false,"error":"..."}
+	// Inside the script, use Engine.get_main_loop() to access the SceneTree.
+	String execute_gdscript(const String &p_code);
+
 private:
 	static String _node_to_json(class Node *p_node, int p_depth = 0);
 };

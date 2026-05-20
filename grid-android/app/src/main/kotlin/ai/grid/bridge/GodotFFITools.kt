@@ -57,6 +57,39 @@ object GodotFFITools {
             params = buildJsonObject {},
             required = emptyList()
         ))
+        add(toolDef(
+            name = "godot_execute_gdscript",
+            description = "Compiles and runs arbitrary GDScript code with full Godot engine access. Use Engine.get_main_loop() inside the script to access the SceneTree. Can spawn any node type, set any property, connect signals, play animations, create resources. Returns JSON {ok, result}.",
+            params = buildJsonObject {
+                put("code", prop("string", "GDScript code to execute. Do NOT include 'extends' or 'func _run():' — just write the body lines directly. Use Engine.get_main_loop() for tree access."))
+            },
+            required = listOf("code")
+        ))
+        add(toolDef(
+            name = "godot_write_script",
+            description = "Writes a GDScript (.gd) file to the active project directory. Use to persist AI-generated scripts that nodes can then reference.",
+            params = buildJsonObject {
+                put("rel_path",  prop("string", "Path relative to project root e.g. scripts/player.gd"))
+                put("content",   prop("string", "Full GDScript source code"))
+            },
+            required = listOf("rel_path", "content")
+        ))
+        add(toolDef(
+            name = "godot_read_file",
+            description = "Reads a file from the active project directory. Use to inspect existing scripts, scenes (.tscn), or config files before editing.",
+            params = buildJsonObject {
+                put("rel_path", prop("string", "Path relative to project root e.g. project.godot"))
+            },
+            required = listOf("rel_path")
+        ))
+        add(toolDef(
+            name = "godot_list_dir",
+            description = "Lists files and directories in the active project directory (or a subdirectory). Use to explore project structure before reading or writing files.",
+            params = buildJsonObject {
+                put("rel_path", prop("string", "Path relative to project root, or empty string for root"))
+            },
+            required = emptyList()
+        ))
 
         // ── Project / GDD tools ────────────────────────────────────────────
         add(toolDef(
@@ -142,6 +175,46 @@ object GodotFFITools {
                 GodotBridge.ensureLoaded()
                 val id = GodotBridge.createSnapshot()
                 if (id >= 0) "Snapshot created: id=$id" else "error: snapshot failed"
+            }
+            "godot_execute_gdscript" -> {
+                GodotBridge.ensureLoaded()
+                val code = args["code"]?.jsonPrimitive?.content ?: return "error: missing code"
+                GodotBridge.executeGdscript(code)
+            }
+            "godot_write_script" -> withContext(Dispatchers.IO) {
+                val relPath = args["rel_path"]?.jsonPrimitive?.content ?: return@withContext "error: missing rel_path"
+                val content = args["content"]?.jsonPrimitive?.content ?: return@withContext "error: missing content"
+                val projectDir = activeGddPath?.let { File(it).parentFile }
+                    ?: return@withContext "error: no active project"
+                runCatching {
+                    val target = File(projectDir, relPath)
+                    target.parentFile?.mkdirs()
+                    target.writeText(content)
+                    "Written: $relPath (${content.length} chars)"
+                }.getOrElse { "error: ${it.message}" }
+            }
+            "godot_read_file" -> withContext(Dispatchers.IO) {
+                val relPath = args["rel_path"]?.jsonPrimitive?.content ?: return@withContext "error: missing rel_path"
+                val projectDir = activeGddPath?.let { File(it).parentFile }
+                    ?: return@withContext "error: no active project"
+                runCatching {
+                    val target = File(projectDir, relPath)
+                    if (!target.exists()) return@runCatching "error: file not found"
+                    target.readText().take(8000)
+                }.getOrElse { "error: ${it.message}" }
+            }
+            "godot_list_dir" -> withContext(Dispatchers.IO) {
+                val relPath = args["rel_path"]?.jsonPrimitive?.content ?: ""
+                val projectDir = activeGddPath?.let { File(it).parentFile }
+                    ?: return@withContext "error: no active project"
+                runCatching {
+                    val target = if (relPath.isBlank()) projectDir else File(projectDir, relPath)
+                    if (!target.exists() || !target.isDirectory) return@runCatching "error: directory not found"
+                    target.listFiles()
+                        ?.sortedWith(compareBy({ !it.isDirectory }, { it.name }))
+                        ?.joinToString("\n") { f -> if (f.isDirectory) "[dir]  ${f.name}" else "[file] ${f.name}  (${f.length()} B)" }
+                        ?: "empty"
+                }.getOrElse { "error: ${it.message}" }
             }
 
             // ── Project / GDD ─────────────────────────────────────────────

@@ -88,4 +88,14 @@ JNIEXPORT jboolean JNICALL Java_ai_grid_bridge_GodotBridge_gridRevertToSnapshot(
 	return bridge->revert_to_snapshot((int)snapshot_id) ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jstring JNICALL Java_ai_grid_bridge_GodotBridge_gridExecuteGdscript(
+		JNIEnv *env, jobject thiz, jstring code) {
+	GridSceneBridge *bridge = get_bridge();
+	if (!bridge) {
+		return env->NewStringUTF("{\"ok\":false,\"error\":\"bridge_not_ready\"}");
+	}
+	String result = bridge->execute_gdscript(jstring_to_string(code, env));
+	return env->NewStringUTF(result.utf8().get_data());
+}
+
 } // extern "C"

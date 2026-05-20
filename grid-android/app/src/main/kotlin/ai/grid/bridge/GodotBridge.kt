@@ -69,6 +69,15 @@ object GodotBridge {
     fun revertToSnapshot(snapshotId: Int): Boolean =
         try { gridRevertToSnapshot(snapshotId) } catch (_: UnsatisfiedLinkError) { false }
 
+    /**
+     * Compiles and runs arbitrary GDScript code.
+     * Returns JSON: {"ok":true,"result":<variant>} or {"ok":false,"error":"..."}
+     * Inside the script, access the scene tree via: var tree = Engine.get_main_loop()
+     */
+    fun executeGdscript(code: String): String =
+        try { gridExecuteGdscript(code) }
+        catch (_: UnsatisfiedLinkError) { "{\"ok\":false,\"error\":\"stub_mode\"}" }
+
     // ── JNI declarations ─ implemented in modules/grid_ffi/jni/grid_ffi_jni.cpp ──────────────────────
     private external fun gridGetSceneTree(): String
     private external fun gridSpawnNode(className: String, parentPath: String): Boolean
@@ -77,4 +86,5 @@ object GodotBridge {
     private external fun gridLoadAsset(filePath: String): Boolean
     private external fun gridCreateSnapshot(): Int
     private external fun gridRevertToSnapshot(snapshotId: Int): Boolean
+    private external fun gridExecuteGdscript(code: String): String
 }
