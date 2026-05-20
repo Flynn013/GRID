@@ -10,7 +10,12 @@ import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-enum class LLMProvider { ANTHROPIC, GEMINI, LITERT }
+enum class LLMProvider(val displayLabel: String) {
+    ANTHROPIC("API KEY"),
+    ANTHROPIC_OAUTH("CLAUDE"),
+    GEMINI("GEMINI"),
+    LITERT("LOCAL"),
+}
 
 data class SettingsData(
     val activeProvider: String = "ANTHROPIC",

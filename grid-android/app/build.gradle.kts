@@ -93,6 +93,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("androidx.browser:browser:1.8.0")
 
     // ── Jetpack Compose ───────────────────────────────────────────────────────────
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))

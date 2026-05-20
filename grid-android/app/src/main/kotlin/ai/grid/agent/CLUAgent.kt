@@ -1,11 +1,12 @@
 package ai.grid.agent
 
+import ai.grid.auth.AnthropicOAuthManager
 import ai.grid.bridge.GodotFFITools
+import ai.grid.data.LLMProvider
 import ai.grid.data.Project
 import ai.grid.data.ProjectRepository
 import ai.grid.data.SettingsData
 import ai.grid.data.SettingsRepository
-import ai.grid.data.LLMProvider
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -135,9 +136,10 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
         _isThinking.value = true
         try {
             when (runCatching { LLMProvider.valueOf(config.activeProvider) }.getOrDefault(LLMProvider.ANTHROPIC)) {
-                LLMProvider.ANTHROPIC -> runAnthropicLoop()
-                LLMProvider.GEMINI    -> runGeminiLoop()
-                LLMProvider.LITERT    -> runLocalLoop()
+                LLMProvider.ANTHROPIC,
+                LLMProvider.ANTHROPIC_OAUTH -> runAnthropicLoop()
+                LLMProvider.GEMINI          -> runGeminiLoop()
+                LLMProvider.LITERT          -> runLocalLoop()
             }
         } finally {
             _isThinking.value = false
@@ -173,8 +175,13 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
     // ── Anthropic ────────────────────────────────────────────────────
 
     private suspend fun runAnthropicLoop(maxRounds: Int = 8) {
-        if (config.anthropicKey.isBlank()) {
+        val isOAuth = config.activeProvider == LLMProvider.ANTHROPIC_OAUTH.name
+        if (!isOAuth && config.anthropicKey.isBlank()) {
             emit("No Anthropic key. Go to VENDOR → set Anthropic key.")
+            return
+        }
+        if (isOAuth && !AnthropicOAuthManager.isSignedIn(getApplication())) {
+            emit("Not signed in to Anthropic. Go to VENDOR → CLAUDE → Sign in.")
             return
         }
         repeat(maxRounds) {
@@ -277,9 +284,16 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
             put("tools",      GodotFFITools.anthropicToolSchemas)
         }
 
+        val isOAuth = config.activeProvider == LLMProvider.ANTHROPIC_OAUTH.name
         return try {
             val resp = http.post("https://api.anthropic.com/v1/messages") {
-                header("x-api-key",         config.anthropicKey)
+                if (isOAuth) {
+                    val token = AnthropicOAuthManager.getValidToken(getApplication())
+                        ?: run { emit("Anthropic OAuth: session expired — go to VENDOR to sign in again."); return null }
+                    header("Authorization", "Bearer $token")
+                } else {
+                    header("x-api-key", config.anthropicKey)
+                }
                 header("anthropic-version", "2023-06-01")
                 contentType(ContentType.Application.Json)
                 setBody(body.toString())

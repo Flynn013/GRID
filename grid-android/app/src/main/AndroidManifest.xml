@@ -13,6 +13,18 @@
     <uses-feature android:name="android.hardware.vulkan.version"
         android:version="0x400003" android:required="false" />
 
+    <!-- Chrome Custom Tabs: required on API 30+ to query browser availability -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="androidx.browser.customtabs.action.CustomTabsService" />
+        </intent>
+    </queries>
+
     <application
         android:name=".GRIDApplication"
         android:allowBackup="false"
