@@ -21,6 +21,8 @@ void GridSceneBridge::_bind_methods() {
 			&GridSceneBridge::spawn_node);
 	ClassDB::bind_method(D_METHOD("set_property_vector3", "node_path", "property", "x", "y", "z"),
 			&GridSceneBridge::set_property_vector3);
+	ClassDB::bind_method(D_METHOD("get_property_vector3", "node_path", "property"),
+			&GridSceneBridge::get_property_vector3);
 	ClassDB::bind_method(D_METHOD("load_glb_asset", "file_path"),
 			&GridSceneBridge::load_glb_asset);
 	ClassDB::bind_method(D_METHOD("create_snapshot"),
@@ -95,6 +97,23 @@ bool GridSceneBridge::set_property_vector3(const String &p_node_path, const Stri
 	}
 	node->set(p_property, Vector3(p_x, p_y, p_z));
 	return true;
+}
+
+String GridSceneBridge::get_property_vector3(const String &p_node_path, const String &p_property) {
+	SceneTree *tree = SceneTree::get_singleton();
+	if (!tree) {
+		return "0,0,0";
+	}
+	Node *node = tree->get_root()->get_node_or_null(NodePath(p_node_path));
+	if (!node) {
+		return "0,0,0";
+	}
+	Variant value = node->get(p_property);
+	if (value.get_type() != Variant::VECTOR3) {
+		return "0,0,0";
+	}
+	Vector3 v = value;
+	return String::num(v.x) + "," + String::num(v.y) + "," + String::num(v.z);
 }
 
 bool GridSceneBridge::load_glb_asset(const String &p_file_path) {

@@ -47,6 +47,19 @@ JNIEXPORT jboolean JNICALL Java_ai_grid_bridge_GodotBridge_gridSetPropertyVector
 	) ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jstring JNICALL Java_ai_grid_bridge_GodotBridge_gridGetPropertyVector3(
+		JNIEnv *env, jobject thiz, jstring node_path, jstring property) {
+	GridSceneBridge *bridge = get_bridge();
+	if (!bridge) {
+		return env->NewStringUTF("0,0,0");
+	}
+	String result = bridge->get_property_vector3(
+			jstring_to_string(node_path, env),
+			jstring_to_string(property, env)
+	);
+	return env->NewStringUTF(result.utf8().get_data());
+}
+
 JNIEXPORT jboolean JNICALL Java_ai_grid_bridge_GodotBridge_gridLoadAsset(
 		JNIEnv *env, jobject thiz, jstring file_path) {
 	GridSceneBridge *bridge = get_bridge();

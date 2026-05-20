@@ -41,6 +41,25 @@ object GodotBridge {
         try { gridSetPropertyVector3(nodePath, property, x, y, z) }
         catch (_: UnsatisfiedLinkError) { false }
 
+    /**
+     * Reads a Vector3 property (position, rotation, scale) from a live Godot node.
+     * Returns Triple(0f, 0f, 0f) in UI-stub mode or when the node is not found.
+     */
+    fun getPropertyVector3(nodePath: String, property: String): Triple<Float, Float, Float> =
+        try {
+            val csv = gridGetPropertyVector3(nodePath, property)
+            val parts = csv.split(",")
+            Triple(
+                parts.getOrNull(0)?.toFloatOrNull() ?: 0f,
+                parts.getOrNull(1)?.toFloatOrNull() ?: 0f,
+                parts.getOrNull(2)?.toFloatOrNull() ?: 0f,
+            )
+        } catch (_: UnsatisfiedLinkError) {
+            Triple(0f, 0f, 0f)
+        } catch (_: Exception) {
+            Triple(0f, 0f, 0f)
+        }
+
     fun loadAsset(filePath: String): Boolean =
         try { gridLoadAsset(filePath) } catch (_: UnsatisfiedLinkError) { false }
 
@@ -50,10 +69,11 @@ object GodotBridge {
     fun revertToSnapshot(snapshotId: Int): Boolean =
         try { gridRevertToSnapshot(snapshotId) } catch (_: UnsatisfiedLinkError) { false }
 
-    // ── JNI declarations ─ implemented in modules/grid_ffi/jni/grid_ffi_jni.cpp ────────────────
+    // ── JNI declarations ─ implemented in modules/grid_ffi/jni/grid_ffi_jni.cpp ──────────────────────
     private external fun gridGetSceneTree(): String
     private external fun gridSpawnNode(className: String, parentPath: String): Boolean
     private external fun gridSetPropertyVector3(nodePath: String, property: String, x: Float, y: Float, z: Float): Boolean
+    private external fun gridGetPropertyVector3(nodePath: String, property: String): String
     private external fun gridLoadAsset(filePath: String): Boolean
     private external fun gridCreateSnapshot(): Int
     private external fun gridRevertToSnapshot(snapshotId: Int): Boolean

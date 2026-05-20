@@ -30,14 +30,13 @@ class EditorViewModel : ViewModel() {
     private val _activeProp = MutableStateFlow("position")
     val activeProp: StateFlow<String> = _activeProp.asStateFlow()
 
-    private val _propX = MutableStateFlow("0.0")
+    private val _propX = MutableStateFlow("0.0000")
     val propX: StateFlow<String> = _propX.asStateFlow()
-    private val _propY = MutableStateFlow("0.0")
+    private val _propY = MutableStateFlow("0.0000")
     val propY: StateFlow<String> = _propY.asStateFlow()
-    private val _propZ = MutableStateFlow("0.0")
+    private val _propZ = MutableStateFlow("0.0000")
     val propZ: StateFlow<String> = _propZ.asStateFlow()
 
-    fun selectProp(p: String) { _activeProp.value = p }
     fun setX(v: String) { _propX.value = v }
     fun setY(v: String) { _propY.value = v }
     fun setZ(v: String) { _propZ.value = v }
@@ -56,9 +55,13 @@ class EditorViewModel : ViewModel() {
 
     fun selectNode(node: SceneNode) {
         _selected.value = node
-        _propX.value = "0.0"
-        _propY.value = "0.0"
-        _propZ.value = "0.0"
+        loadProperty(node.path, _activeProp.value)
+    }
+
+    fun selectProp(p: String) {
+        _activeProp.value = p
+        val path = _selected.value?.path ?: return
+        loadProperty(path, p)
     }
 
     fun applyProperty() {
@@ -68,6 +71,19 @@ class EditorViewModel : ViewModel() {
         val z = _propZ.value.toFloatOrNull() ?: return
         viewModelScope.launch(Dispatchers.IO) {
             GodotBridge.setPropertyVector3(path, _activeProp.value, x, y, z)
+        }
+    }
+
+    private fun loadProperty(nodePath: String, property: String) {
+        if (nodePath.isBlank()) {
+            _propX.value = "0.0000"; _propY.value = "0.0000"; _propZ.value = "0.0000"
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val (x, y, z) = GodotBridge.getPropertyVector3(nodePath, property)
+            _propX.value = "%.4f".format(x)
+            _propY.value = "%.4f".format(y)
+            _propZ.value = "%.4f".format(z)
         }
     }
 

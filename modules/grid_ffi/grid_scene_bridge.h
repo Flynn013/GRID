@@ -26,6 +26,10 @@ public:
 	bool set_property_vector3(const String &p_node_path, const String &p_property,
 			float p_x, float p_y, float p_z);
 
+	// Reads a Vector3 property from the node at p_node_path.
+	// Returns a comma-separated "x,y,z" string ("0,0,0" if not found).
+	String get_property_vector3(const String &p_node_path, const String &p_property);
+
 	// Loads a .glb file from the Android sandbox into the active scene.
 	bool load_glb_asset(const String &p_file_path);
 
