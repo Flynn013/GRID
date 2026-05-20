@@ -1,9 +1,11 @@
 package ai.grid.agent
 
 import ai.grid.bridge.GodotFFITools
-import ai.grid.data.LLMProvider
+import ai.grid.data.Project
+import ai.grid.data.ProjectRepository
 import ai.grid.data.SettingsData
 import ai.grid.data.SettingsRepository
+import ai.grid.data.LLMProvider
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,9 +16,12 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
+import java.io.File
 
 enum class Role { USER, ASSISTANT, TOOL }
 
@@ -27,7 +32,6 @@ data class Message(
     val toolCallId: String? = null,
 )
 
-// Provider-agnostic internal API history entries
 private sealed class ApiEntry {
     data class UserText(val text: String) : ApiEntry()
     class  AssistantBlocks(val blocks: List<Block>) : ApiEntry()
@@ -39,17 +43,19 @@ private sealed class Block {
     class  ToolUse(val id: String, val name: String, val input: JsonObject) : Block()
 }
 
-private const val SYSTEM_PROMPT = """
+private const val BASE_SYSTEM = """
 You are CLU, the embedded AI agent of GRID — a sovereign mobile game engine IDE.
 You have direct FFI access to the live Godot 4 SceneTree via tool calls.
 Always call godot_get_scene_tree before making structural changes.
+Call project_get_gdd at the start of each session to understand project scope.
 Keep responses concise and technical. Prefer tool actions over explanations.
-When asked to spawn objects, build scenes, or manipulate the 3D world, use the tools immediately.
+At the end of a productive session, call project_append_sprint to record what was built.
 """.trimIndent()
 
 class CLUAgent(app: Application) : AndroidViewModel(app) {
 
-    private val repo = SettingsRepository.get(app)
+    private val settingsRepo = SettingsRepository.get(app)
+    private val projectRepo  = ProjectRepository.get(app)
     private var config: SettingsData = SettingsData()
 
     private val _messages   = MutableStateFlow<List<Message>>(emptyList())
@@ -62,6 +68,7 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
     val activeTask: StateFlow<String?> = _activeTask.asStateFlow()
 
     private val apiHistory = mutableListOf<ApiEntry>()
+    private var systemPrompt = BASE_SYSTEM
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val http = HttpClient(OkHttp) {
@@ -69,7 +76,7 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
     }
 
     init {
-        viewModelScope.launch { repo.flow.collect { config = it } }
+        viewModelScope.launch { settingsRepo.flow.collect { config = it } }
     }
 
     fun clearHistory() {
@@ -78,6 +85,9 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun send(userText: String) {
+        // Rebuild system prompt with live project + GDD context
+        systemPrompt = buildSystemPrompt()
+
         apiHistory.add(ApiEntry.UserText(userText))
         _messages.update { it + Message(Role.USER, userText) }
         _isThinking.value = true
@@ -93,20 +103,44 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Anthropic ─────────────────────────────────────────────────────────────
+    private suspend fun buildSystemPrompt(): String {
+        val project: Project? = try {
+            projectRepo.activeProjectFlow.first()
+        } catch (_: Exception) { null }
 
-    private suspend fun runAnthropicLoop(maxRounds: Int = 6) {
+        val gdd: String? = project?.gddPath?.let { path ->
+            withContext(Dispatchers.IO) {
+                runCatching { File(path).readText().take(3500) }.getOrNull()
+            }
+        }
+
+        return buildString {
+            append(BASE_SYSTEM)
+            if (project != null) {
+                appendLine("\n\n## Active Project: ${project.name} (${project.type})")
+                if (gdd != null) {
+                    appendLine("\n## GDD_MASTER.md (first 3500 chars):")
+                    appendLine("```")
+                    append(gdd)
+                    appendLine("\n```")
+                }
+            }
+        }
+    }
+
+    // ── Anthropic ────────────────────────────────────────────────────
+
+    private suspend fun runAnthropicLoop(maxRounds: Int = 8) {
         if (config.anthropicKey.isBlank()) {
             emit("No Anthropic key. Go to VENDOR → set Anthropic key.")
             return
         }
         repeat(maxRounds) {
             val resp = callAnthropic() ?: return
-            val stopReason  = resp["stop_reason"]?.jsonPrimitive?.content
-            val rawBlocks   = resp["content"]?.jsonArray ?: return
-
+            val stopReason      = resp["stop_reason"]?.jsonPrimitive?.content
+            val rawBlocks       = resp["content"]?.jsonArray ?: return
             val assistantBlocks = mutableListOf<Block>()
-            val pendingTools    = mutableListOf<Triple<String, String, JsonObject>>() // id, name, input
+            val pendingTools    = mutableListOf<Triple<String, String, JsonObject>>()
 
             for (raw in rawBlocks) {
                 when (raw.jsonObject["type"]?.jsonPrimitive?.content) {
@@ -127,10 +161,8 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            // Record assistant turn before tool results
             if (assistantBlocks.isNotEmpty()) apiHistory.add(ApiEntry.AssistantBlocks(assistantBlocks))
 
-            // Dispatch tools and record results
             for ((id, name, input) in pendingTools) {
                 _activeTask.value = "→ $name"
                 val result = GodotFFITools.dispatch(name, input)
@@ -145,14 +177,14 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
 
     private suspend fun callAnthropic(): JsonObject? {
         val messages = buildJsonArray {
-            val pendingResults = mutableListOf<ApiEntry.ToolResult>()
+            val pending = mutableListOf<ApiEntry.ToolResult>()
 
-            fun flushResults() {
-                if (pendingResults.isEmpty()) return
+            fun flush() {
+                if (pending.isEmpty()) return
                 add(buildJsonObject {
                     put("role", "user")
                     put("content", buildJsonArray {
-                        pendingResults.forEach { tr ->
+                        pending.forEach { tr ->
                             add(buildJsonObject {
                                 put("type",        "tool_result")
                                 put("tool_use_id", tr.id)
@@ -161,29 +193,23 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
                         }
                     })
                 })
-                pendingResults.clear()
+                pending.clear()
             }
 
             for (entry in apiHistory) {
                 when (entry) {
                     is ApiEntry.UserText -> {
-                        flushResults()
-                        add(buildJsonObject {
-                            put("role",    "user")
-                            put("content", entry.text)
-                        })
+                        flush()
+                        add(buildJsonObject { put("role", "user"); put("content", entry.text) })
                     }
                     is ApiEntry.AssistantBlocks -> {
-                        flushResults()
+                        flush()
                         add(buildJsonObject {
                             put("role", "assistant")
                             put("content", buildJsonArray {
                                 entry.blocks.forEach { b ->
                                     add(when (b) {
-                                        is Block.Text -> buildJsonObject {
-                                            put("type", "text")
-                                            put("text", b.text)
-                                        }
+                                        is Block.Text    -> buildJsonObject { put("type", "text"); put("text", b.text) }
                                         is Block.ToolUse -> buildJsonObject {
                                             put("type",  "tool_use")
                                             put("id",    b.id)
@@ -195,16 +221,16 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
                             })
                         })
                     }
-                    is ApiEntry.ToolResult -> pendingResults.add(entry)
+                    is ApiEntry.ToolResult -> pending.add(entry)
                 }
             }
-            flushResults()
+            flush()
         }
 
         val body = buildJsonObject {
             put("model",      "claude-opus-4-7")
             put("max_tokens", 4096)
-            put("system",     SYSTEM_PROMPT)
+            put("system",     systemPrompt)
             put("messages",   messages)
             put("tools",      GodotFFITools.anthropicToolSchemas)
         }
@@ -223,36 +249,34 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Gemini ────────────────────────────────────────────────────────────────
+    // ── Gemini ─────────────────────────────────────────────────────────────
 
-    private suspend fun runGeminiLoop(maxRounds: Int = 6) {
+    private suspend fun runGeminiLoop(maxRounds: Int = 8) {
         if (config.geminiKey.isBlank()) {
             emit("No Gemini key. Go to VENDOR → set Gemini key.")
             return
         }
         repeat(maxRounds) {
             val resp = callGemini() ?: return
-            val candidate  = resp["candidates"]?.jsonArray?.firstOrNull()?.jsonObject ?: return
+            val candidate    = resp["candidates"]?.jsonArray?.firstOrNull()?.jsonObject ?: return
             val finishReason = candidate["finishReason"]?.jsonPrimitive?.content
-            val parts      = candidate["content"]?.jsonObject?.get("parts")?.jsonArray ?: return
+            val parts        = candidate["content"]?.jsonObject?.get("parts")?.jsonArray ?: return
 
             val assistantBlocks = mutableListOf<Block>()
             val pendingTools    = mutableListOf<Triple<String, String, JsonObject>>()
 
             for (part in parts) {
-                val obj  = part.jsonObject
-                val text = obj["text"]?.jsonPrimitive?.content
-                val fc   = obj["functionCall"]?.jsonObject
-
+                val text = part.jsonObject["text"]?.jsonPrimitive?.content
+                val fc   = part.jsonObject["functionCall"]?.jsonObject
                 when {
                     text != null && text.isNotBlank() -> {
                         assistantBlocks.add(Block.Text(text))
                         _messages.update { it + Message(Role.ASSISTANT, text) }
                     }
                     fc != null -> {
-                        val name  = fc["name"]?.jsonPrimitive?.content ?: continue
-                        val args  = fc["args"]?.jsonObject ?: buildJsonObject {}
-                        val id    = "gemini-${name}-${System.currentTimeMillis()}"
+                        val name = fc["name"]?.jsonPrimitive?.content ?: continue
+                        val args = fc["args"]?.jsonObject ?: buildJsonObject {}
+                        val id   = "g-${name}-${System.currentTimeMillis()}"
                         assistantBlocks.add(Block.ToolUse(id, name, args))
                         pendingTools.add(Triple(id, name, args))
                     }
@@ -286,11 +310,10 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
                         put("parts", buildJsonArray {
                             entry.blocks.forEach { b ->
                                 add(when (b) {
-                                    is Block.Text -> buildJsonObject { put("text", b.text) }
+                                    is Block.Text    -> buildJsonObject { put("text", b.text) }
                                     is Block.ToolUse -> buildJsonObject {
                                         put("functionCall", buildJsonObject {
-                                            put("name", b.name)
-                                            put("args", b.input)
+                                            put("name", b.name); put("args", b.input)
                                         })
                                     }
                                 })
@@ -302,7 +325,7 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
                         put("parts", buildJsonArray {
                             add(buildJsonObject {
                                 put("functionResponse", buildJsonObject {
-                                    put("name",     entry.name)
+                                    put("name", entry.name)
                                     put("response", buildJsonObject { put("result", entry.result) })
                                 })
                             })
@@ -314,7 +337,7 @@ class CLUAgent(app: Application) : AndroidViewModel(app) {
 
         val body = buildJsonObject {
             put("system_instruction", buildJsonObject {
-                put("parts", buildJsonArray { add(buildJsonObject { put("text", SYSTEM_PROMPT) }) })
+                put("parts", buildJsonArray { add(buildJsonObject { put("text", systemPrompt) }) })
             })
             put("tools", buildJsonArray {
                 add(buildJsonObject { put("function_declarations", GodotFFITools.geminiToolSchemas) })

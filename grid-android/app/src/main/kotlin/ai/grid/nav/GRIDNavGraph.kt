@@ -1,6 +1,7 @@
 package ai.grid.nav
 
 import ai.grid.agent.CLUAgent
+import ai.grid.bridge.GodotFFITools
 import ai.grid.ui.codex.CodexScreen
 import ai.grid.ui.editor.EditorScreen
 import ai.grid.ui.editor.EditorViewModel
@@ -28,6 +29,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -62,7 +64,6 @@ private val ALL_SCREENS = listOf(
 
 @Composable
 fun GRIDNavGraph(modifier: Modifier = Modifier) {
-    // All ViewModels at activity scope — survive tab switches.
     val cluAgent:   CLUAgent           = viewModel()
     val settingsVm: SettingsViewModel  = viewModel()
     val editorVm:   EditorViewModel    = viewModel()
@@ -70,6 +71,12 @@ fun GRIDNavGraph(modifier: Modifier = Modifier) {
     val projectsVm: ProjectsViewModel  = viewModel()
 
     val activeProject by projectsVm.activeProject.collectAsState()
+
+    // Sync active project path into GodotFFITools so CLU tools can access it.
+    LaunchedEffect(activeProject) {
+        GodotFFITools.activeGddPath     = activeProject?.gddPath
+        GodotFFITools.activeProjectName = activeProject?.name
+    }
 
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -128,12 +135,10 @@ fun GRIDNavGraph(modifier: Modifier = Modifier) {
                     vm = projectsVm,
                 )
             }
-            composable(Screen.Stage.route)    {
-                StageScreen(projectPath = activeProject?.path)
-            }
-            composable(Screen.Editor.route)   { EditorScreen(vm = editorVm) }
-            composable(Screen.Files.route)    { FilesScreen(vm = filesVm) }
-            composable(Screen.Codex.route)    { CodexScreen() }
+            composable(Screen.Stage.route)  { StageScreen(projectPath = activeProject?.path) }
+            composable(Screen.Editor.route) { EditorScreen(vm = editorVm) }
+            composable(Screen.Files.route)  { FilesScreen(vm = filesVm) }
+            composable(Screen.Codex.route)  { CodexScreen(activeProject = activeProject) }
             composable(Screen.Settings.route) { SettingsScreen(vm = settingsVm) }
         }
     }
