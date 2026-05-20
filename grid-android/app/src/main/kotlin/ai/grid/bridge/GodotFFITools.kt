@@ -51,6 +51,12 @@ object GodotFFITools {
             },
             required = listOf("file_path")
         ))
+        add(toolDef(
+            name = "godot_create_snapshot",
+            description = "Creates an in-RAM checkpoint of the current SceneTree. Call before making destructive structural changes so the scene can be reverted if needed. Returns the snapshot ID.",
+            params = buildJsonObject {},
+            required = emptyList()
+        ))
 
         // ── Project / GDD tools ────────────────────────────────────────────
         add(toolDef(
@@ -131,6 +137,11 @@ object GodotFFITools {
                 GodotBridge.ensureLoaded()
                 val path = args["file_path"]?.jsonPrimitive?.content ?: return "error: missing file_path"
                 GodotBridge.loadAsset(path).toString()
+            }
+            "godot_create_snapshot" -> {
+                GodotBridge.ensureLoaded()
+                val id = GodotBridge.createSnapshot()
+                if (id >= 0) "Snapshot created: id=$id" else "error: snapshot failed"
             }
 
             // ── Project / GDD ─────────────────────────────────────────────

@@ -77,7 +77,22 @@ fun SessionScreen(
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!isThinking && messages.isNotEmpty()) {
+                    TextButton(
+                        onClick = { agent.clearHistory() },
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text(
+                            "RESET",
+                            color = Color.Gray, fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
                 IconButton(onClick = onNavigateToStage) {
                     Icon(Icons.Default.SportsEsports, "Open Stage", tint = CYAN)
                 }
@@ -155,13 +170,10 @@ fun SessionScreen(
 
 @Composable
 private fun MessageBubble(msg: Message) {
-    val isUser = msg.role == Role.USER
-    val isTool = msg.role == Role.TOOL
-
-    when {
-        isTool -> ToolBubble(msg.content)
-        isUser -> UserBubble(msg.content)
-        else   -> AssistantBubble(msg.content)
+    when (msg.role) {
+        Role.USER      -> UserBubble(msg.content)
+        Role.ASSISTANT -> AssistantBubble(msg.content)
+        Role.TOOL      -> ToolBubble(msg.content)
     }
 }
 
